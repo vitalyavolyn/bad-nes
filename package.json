@@ -1,0 +1,15 @@
+{
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "serve": "http-server -c-1"
+  },
+  "type": "module",
+  "name": "bad-nes",
+  "version": "1.0.0",
+  "description": "A bad NES emulator written in TypeScript",
+  "main": "dist/index.js",
+  "license": "MIT"
+}
