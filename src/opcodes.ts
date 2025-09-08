@@ -174,6 +174,16 @@ export const opcodes: Record<number, OpcodeImpl> = {
     opSta(nes, address)
     return 5
   },
+  0x81(nes) { // STA indirect X
+    const address = nes.readIndirectX()
+    opSta(nes, address)
+    return 6
+  },
+  0x91(nes) { // STA indirect Y
+    const address = nes.readIndirectY()
+    opSta(nes, address)
+    return 6
+  },
   0x86(nes) { // STX zero page
     const address = nes.readPcAndIncrement()
     opStx(nes, address)
@@ -377,7 +387,13 @@ export const opcodes: Record<number, OpcodeImpl> = {
     nes.pc = word(destLo, destHi)
     return 3
   },
-
+  0x6C(nes) { // JMP indirect
+    const address = nes.readAbsolute()
+    const lo = nes.read(address)
+    const hi = nes.read((address & 0xFF00) | ((address + 1) & 0xFF))
+    nes.pc = word(lo, hi)
+    return 5
+  },
   0xE8(nes) { // INX
     nes.x = incByte(nes.x)
     nes.setNZFlags(nes.x)

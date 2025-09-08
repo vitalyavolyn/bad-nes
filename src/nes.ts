@@ -100,6 +100,22 @@ export class NES {
     return address
   }
 
+  public readIndirectX(): number {
+    const zeroPageAddr = this.readPcAndIncrement()
+    const indirectAddr = (zeroPageAddr + this.x) & 0xFF
+    const lo = this.read(indirectAddr)
+    const hi = this.read((indirectAddr + 1) & 0xFF)
+    return word(lo, hi)
+  }
+
+  public readIndirectY(): number {
+    const zeroPageAddr = this.readPcAndIncrement()
+    const lo = this.read(zeroPageAddr)
+    const hi = this.read((zeroPageAddr + 1) & 0xFF)
+    const address = word(lo, hi) + this.y
+    return address
+  }
+
   private tick() {
     const opcode = this.readPcAndIncrement()
 
