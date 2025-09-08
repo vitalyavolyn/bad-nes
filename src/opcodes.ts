@@ -1,0 +1,578 @@
+import type { NES } from "./nes.js"
+import { decByte, hi, incByte, lo, uint8ToInt8, word } from "./utils.js";
+
+type OpcodeImpl = (nes: NES) => number;
+
+const push = (nes: NES, val: number) => {
+  nes.write(0x100 + nes.sp, val)
+  nes.sp = decByte(nes.sp)
+}
+const pull = (nes: NES) => {
+  nes.sp = incByte(nes.sp)
+  return nes.read(0x100 + nes.sp)
+}
+
+const opInc = (nes: NES, address: number, value: number) => {
+  const newVal = incByte(value)
+  nes.write(address, newVal)
+  nes.setNZFlags(newVal)
+}
+
+const opDec = (nes: NES, address: number, value: number) => {
+  const newVal = decByte(value)
+  nes.write(address, newVal)
+  nes.setNZFlags(newVal)
+}
+
+const opOra = (nes: NES, value: number) => {
+  nes.a |= value
+  nes.setNZFlags(nes.a)
+}
+
+const opAnd = (nes: NES, value: number) => {
+  nes.a &= value
+  nes.setNZFlags(nes.a)
+}
+
+const opEor = (nes: NES, value: number) => {
+  nes.a ^= value
+  nes.setNZFlags(nes.a)
+}
+
+// may be wrong
+const opAdc = (nes: NES, value: number) => {
+  let sum = nes.a + value + Number(nes.carry)
+  nes.carry = sum > 0xff
+  sum &= 0xff
+  nes.overflow = Boolean((sum ^ nes.a) & (sum ^ value) & 0x80)
+  nes.a = sum
+  nes.setNZFlags(nes.a)
+}
+
+const opSbc = (nes: NES, value: number) => {
+  let result = nes.a - value - (1 - Number(nes.carry))
+  nes.carry = result >= 0
+  result &= 0xff
+  nes.overflow = Boolean((result ^ nes.a) & (result ^ (~value)) & 0x80)
+  nes.a = result
+  nes.setNZFlags(nes.a)
+}
+
+export const opcodes: Record<number, OpcodeImpl> = {
+  0x02(nes) { // HLT
+    nes.halt = true;
+    console.debug('halt!', nes.ram)
+    // TODO: what
+    return 1;
+  },
+  0x85(nes) {// STA zero page
+    const address = nes.readPcAndIncrement()
+    nes.write(address, nes.a);
+    return 3;
+  },
+  0x8D(nes) {// STA absolute
+    const lo = nes.readPcAndIncrement()
+    const hi = nes.readPcAndIncrement()
+    nes.write(word(lo, hi), nes.a)
+    return 4;
+  },
+
+  0x86(nes) {// STX zero page
+    const address = nes.readPcAndIncrement()
+    nes.write(address, nes.x);
+    return 3;
+  },
+  0x8E(nes) { // STX absolute
+    const lo = nes.readPcAndIncrement()
+    const hi = nes.readPcAndIncrement()
+    nes.write(word(lo, hi), nes.x)
+    return 4;
+  },
+
+  0x84(nes) { // STY zero page
+    const address = nes.readPcAndIncrement()
+    nes.write(address, nes.y);
+    return 3;
+  },
+  0x8C(nes) { // STY absolute
+    const lo = nes.readPcAndIncrement()
+    const hi = nes.readPcAndIncrement()
+    nes.write(word(lo, hi), nes.y)
+    return 4;
+  },
+
+  0xA0(nes) { // LDY immediate
+    nes.y = nes.readPcAndIncrement()
+    nes.setNZFlags(nes.y);
+    return 2
+  },
+  0xA2(nes) {// LDX immediate
+    nes.x = nes.readPcAndIncrement()
+    nes.setNZFlags(nes.x)
+    return 2;
+  },
+  0xA5(nes) {// LDA zero page
+    const address = nes.readPcAndIncrement()
+    nes.a = nes.read(address)
+    nes.setNZFlags(nes.a)
+    return 3
+  },
+  0xA9(nes) {// LDA immediate
+    nes.a = nes.readPcAndIncrement()
+    nes.setNZFlags(nes.a)
+    return 2
+  },
+  0xAD(nes) { // LDA absolute
+    const lo = nes.readPcAndIncrement()
+    const hi = nes.readPcAndIncrement()
+    nes.a = nes.read(word(lo, hi));
+    nes.setNZFlags(nes.a)
+    return 4;
+  },
+
+  // branches
+  0x10(nes) { // BPL Branch on Plus
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (!nes.negative) {
+      nes.pc += offset;
+      return 3;
+    }
+    return 2;
+  },
+  0x30(nes) { // BMI Branch on Minus
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (nes.negative) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0x50(nes) { // BVC Branch on Overflow Clear
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (!nes.overflow) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0x70(nes) { // BVS Branch on Overflow Set
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (nes.overflow) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0x90(nes) { // BCC Branch on Carry Clear
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (!nes.carry) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0xB0(nes) { // BCS Branch on Carry Set
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (nes.carry) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0xD0(nes) { // BNE Branch on Not Equal
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (!nes.zero) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+  0xF0(nes) { // BEQ Branch on Equal
+    const offset = uint8ToInt8(nes.readPcAndIncrement())
+    if (nes.zero) {
+      nes.pc += offset
+      return 3;
+    }
+    return 2;
+  },
+
+  0x48(nes) { // PHA
+    push(nes, nes.a);
+    return 3;
+  },
+  0x68(nes) { // PLA
+    nes.a = pull(nes)
+    nes.setNZFlags(nes.a)
+    return 4
+  },
+
+  0x20(nes) { // JSR
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    nes.pc--;
+    push(nes, hi(nes.pc))
+    push(nes, lo(nes.pc))
+    nes.pc = word(destLo, destHi)
+    return 6;
+  },
+  0x60(nes) { // RTS
+    const pcLo = pull(nes);
+    const pcHi = pull(nes);
+    nes.pc = word(pcLo, pcHi) + 1
+    return 6
+  },
+  0x4C(nes) { // JMP
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    nes.pc = word(destLo, destHi)
+    return 3
+  },
+
+  0xE8(nes) { // INX
+    nes.x = incByte(nes.x)
+    nes.setNZFlags(nes.x)
+    return 2
+  },
+  0xCA(nes) { // DEX
+    nes.x = decByte(nes.x)
+    nes.setNZFlags(nes.x)
+    return 2
+  },
+  0xC8(nes) { // INY
+    nes.y = incByte(nes.y)
+    nes.setNZFlags(nes.y)
+    return 2
+  },
+  0x88(nes) { // DEY
+    nes.y = decByte(nes.y)
+    nes.setNZFlags(nes.y)
+    return 2
+  },
+  0xAA(nes) { // TAX
+    nes.x = nes.a;
+    nes.setNZFlags(nes.x)
+    return 2
+  },
+  0x8A(nes) { // TXA
+    nes.a = nes.x;
+    nes.setNZFlags(nes.a)
+    return 2
+  },
+  0xA8(nes) { // TAY
+    nes.y = nes.a;
+    nes.setNZFlags(nes.y)
+    return 2
+  },
+  0x98(nes) { // TYA
+    nes.a = nes.y;
+    nes.setNZFlags(nes.a)
+    return 2
+  },
+  0x9A(nes) { // TXS
+    nes.sp = nes.x;
+    return 2;
+  },
+  0xBA(nes) { // TSX
+    nes.x = nes.sp;
+    nes.setNZFlags(nes.x)
+    return 2
+  },
+  0x38(nes) { // SEC
+    nes.carry = true;
+    return 2;
+  },
+  0x18(nes) { // CLC
+    nes.carry = false;
+    return 2;
+  },
+  0xB8(nes) { // CLV
+    nes.overflow = false;
+    return 2;
+  },
+  0x78(nes) { // SEI
+    nes.interruptDisable = true;
+    return 2;
+  },
+  0x58(nes) { // CLI
+    nes.interruptDisable = false;
+    return 2;
+  },
+  0xF8(nes) { // SED
+    nes.decimal = true;
+    return 2;
+  },
+  0xD8(nes) { // CLD
+    nes.decimal = false;
+    return 2;
+  },
+  0xEA(nes) { // NOP
+    return 2;
+  },
+  0x08(nes) { // PHP
+    let flags = 0
+    flags += Number(nes.carry);
+    flags += Number(nes.zero) << 1;
+    flags += Number(nes.interruptDisable) << 2;
+    flags += Number(nes.decimal) << 3;
+    flags += 1 << 4;
+    flags += 1 << 5;
+    flags += Number(nes.overflow) << 6;
+    flags += Number(nes.negative) << 7;
+    push(nes, flags)
+    return 3
+  },
+  0x28(nes) { // PLP
+    const flags = pull(nes);
+    nes.carry = (flags & 1) != 0;
+    nes.zero = (flags & (1 << 1)) != 0;
+    nes.interruptDisable = (flags & (1 << 2)) != 0;
+    nes.decimal = (flags & (1 << 3)) != 0
+    nes.overflow = (flags & (1 << 6)) != 0
+    nes.negative = (flags & (1 << 7)) != 0
+    return 3
+  },
+  0x0A(nes) { // ASL a
+    nes.carry = nes.a > 127
+    nes.a = (nes.a << 1) & 0xff
+    nes.setNZFlags(nes.a)
+    // TODO: what? increment pc?
+    return 2;
+  },
+  0x2A(nes) { // ROL a
+    const laterCarry = nes.a > 127
+    nes.a = (nes.a << 1) & 0xff
+    if (nes.carry) nes.a |= 1;
+    nes.carry = laterCarry
+    nes.setNZFlags(nes.a) 
+    return 2
+  },
+  // TODO: merge these two
+  0x06(nes) { // ASL zero page
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    nes.carry = val > 127;
+    val = (val << 1) & 0xff;
+    nes.setNZFlags(val);
+    nes.write(addr, val);
+    return 5; 
+  },
+  0x0E(nes) { // ASL abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    nes.carry = val > 127;
+    val = (val << 1) & 0xff;
+    nes.setNZFlags(val);
+    nes.write(addr, val);
+    return 6;
+  },
+  // TODO: merge these two
+  0x26(nes) { // ROL zero page
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    const laterCarry = val > 127;
+    val = (val << 1) & 0xff;
+    if (nes.carry) val |= 1;
+    nes.setNZFlags(val);
+    nes.carry = laterCarry
+    nes.write(addr, val);
+    return 5; 
+  },
+  0x2E(nes) { // ROL abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    const laterCarry = val > 127;
+    val = (val << 1) & 0xff;
+    if (nes.carry) val |= 1;
+    nes.setNZFlags(val);
+    nes.carry = laterCarry;
+    nes.write(addr, val);
+    return 6;
+  },
+  0x4A(nes) { // LSR a
+    nes.carry = (nes.a & 1) > 0
+    nes.a >>= 1
+    nes.setNZFlags(nes.a)
+    return 2;
+  },
+  0x6A(nes) { // ROR a
+    const laterCarry = nes.a > 127
+    nes.a >>= 1
+    if (nes.carry) nes.a |= 128;
+    nes.carry = laterCarry
+    nes.setNZFlags(nes.a) 
+    return 2
+  },
+  // TODO: merge these two
+  0x46(nes) { // LSR zero page
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    nes.carry = (val & 1) > 0
+    val >>= 1;
+    nes.setNZFlags(val);
+    nes.write(addr, val);
+    return 5; 
+  },
+  0x4E(nes) { // LSR abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    nes.carry = (val & 1) > 0;
+    val >>= 1;
+    nes.setNZFlags(val);
+    nes.write(addr, val);
+    return 6;
+  },
+  // TODO: merge these two
+  0x66(nes) { // ROR zero page
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    const laterCarry = (val & 1) > 0;
+    val >>= 1;
+    if (nes.carry) val |= 128;
+    nes.setNZFlags(val);
+    nes.carry = laterCarry
+    nes.write(addr, val);
+    return 5; 
+  },
+  0x6E(nes) { // ROR abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    const laterCarry = (val & 1) > 0;
+    val >>= 1;
+    if (nes.carry) val |= 128;
+    nes.setNZFlags(val);
+    nes.carry = laterCarry;
+    nes.write(addr, val);
+    return 6;
+  },
+  0xE6(nes) { // INC zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opInc(nes, addr, val);
+    return 5;
+  },
+  0xEE(nes) { // INC abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opInc(nes, addr, val)
+    return 6;
+  },
+  0xC6(nes) { // DEC zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opDec(nes, addr, val);
+    return 5;
+  },
+  0xCE(nes) { // DEC abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opDec(nes, addr, val)
+    return 6;
+  },
+  0x09(nes) { // ORA imm
+    const value = nes.readPcAndIncrement()
+    opOra(nes, value);
+    return 2
+  },
+  0x05(nes) { // ORA zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opOra(nes, val)
+    return 3
+  },
+  0x0D(nes) { // ORA abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opOra(nes, val)
+    return 4
+  },
+  0x29(nes) { // AND imm
+    const value = nes.readPcAndIncrement()
+    opAnd(nes, value);
+    return 2
+  },
+  0x25(nes) { // AND zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opAnd(nes, val)
+    return 3
+  },
+  0x2D(nes) { // AND abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opAnd(nes, val)
+    return 4
+  },
+  0x49(nes) { // EOR imm
+    const value = nes.readPcAndIncrement()
+    opEor(nes, value);
+    return 2
+  },
+  0x45(nes) { // EOR zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opEor(nes, val)
+    return 3
+  },
+  0x4D(nes) { // EOR abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opEor(nes, val)
+    return 4
+  },
+  0x69(nes) { // ADC imm
+    const value = nes.readPcAndIncrement()
+    opAdc(nes, value);
+    return 2
+  },
+  0x65(nes) { // ADC zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opAdc(nes, val)
+    return 3
+  },
+  0x6D(nes) { // ADC abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opAdc(nes, val)
+    return 4
+  },
+  0xE9(nes) { // SBC imm
+    const value = nes.readPcAndIncrement()
+    opSbc(nes, value);
+    return 2
+  },
+  0xE5(nes) { // SBC zero
+    const addr = nes.readPcAndIncrement()
+    let val = nes.read(addr);
+    opSbc(nes, val)
+    return 3
+  },
+  0xED(nes) { // SBC abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo,  destHi)
+    let val = nes.read(addr);
+    opSbc(nes, val)
+    return 4
+  },
+}
