@@ -24,6 +24,7 @@ export class NES {
 
   ram = new Uint8Array(2048)
   rom = new Uint8Array()
+  chrrom = new Uint8Array()
   header = new Uint8Array()
 
   halt = false
@@ -138,10 +139,45 @@ export class NES {
     this.header = new Uint8Array(file.slice(0, 16))
     this.rom = new Uint8Array(file.slice(16))
 
+    // TODO: i don't understand where this number comes from
+    this.chrrom = this.rom.slice(0x8010)
+    this.drawPatternTable()
+
     console.log(this.header)
     console.log(this.rom)
 
     this.pc = word(this.read(0xFFFC), this.read(0xFFFD))
+  }
+
+  public drawPatternTable() {
+    const canvas = document.createElement('canvas')
+    canvas.width = 256
+    canvas.height = 128
+    document.body.appendChild(canvas)
+    const ctx = canvas.getContext('2d')!
+
+    for (let table = 0; table < 2; table++) {
+      for (let row = 0; row < 16; row++) {
+        for (let column = 0; column < 16; column++) {
+          for (let y = 0; y < 8; y++) {
+            const lo = this.chrrom[y + column * 16 + row * 256 + table * 4096]!
+            const hi = this.chrrom[8 + y + column * 16 + row * 256 + table * 4096]!
+            for (let x = 0; x < 8; x++) {
+              let color = ((lo >> (7 - x)) & 1) == 1 ? 1 : 0
+              color += ((hi >> (7 - x)) & 1) == 1 ? 1 : 0
+
+              const imageData = ctx.createImageData(1, 1)
+              imageData.data[0] = color * 85
+              imageData.data[1] = color * 85
+              imageData.data[2] = color * 85
+              imageData.data[3] = 255
+              console.log(color, color * 85, x + column * 8 + table * 128, y + row * 8)
+              ctx.putImageData(imageData, x + column * 8 + table * 128, y + row * 8)
+            }
+          }
+        }
+      }
+    }
   }
 
   public start() {
