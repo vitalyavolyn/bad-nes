@@ -61,11 +61,23 @@ export class NES {
     return result
   }
 
+  public readZeroPage(): number {
+    const address = this.readPcAndIncrement()
+    return this.read(address)
+  }
+
+  public readAbsolute(): number {
+    const lo = this.readPcAndIncrement()
+    const hi = this.readPcAndIncrement()
+    const address = word(lo, hi)
+    return this.read(address)
+  }
+
   private tick() {
     const opcode = this.readPcAndIncrement()
 
     if (opcodes[opcode]) {
-      console.log({ op: opcode.toString(16), pc: (this.pc - 1).toString(16) })
+      console.debug({ op: opcode.toString(16), pc: (this.pc - 1).toString(16) })
       opcodes[opcode](this)
     }
     else {
