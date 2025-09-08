@@ -1,3 +1,4 @@
+/* eslint-disable */
 import { NES } from "./nes.js"
 
 console.log('hello')
@@ -22,6 +23,7 @@ fileSelector!.addEventListener('change', (event: any) => {
   reader.onload = () => {
     nes.loadROM(reader.result as ArrayBuffer)
     nes.start()
+    isStarted = true
   }
   
   reader.readAsArrayBuffer(file);
