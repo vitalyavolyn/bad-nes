@@ -12,7 +12,7 @@ export function lo(word: number) {
 
 export function uint8ToInt8(val: number): number {
   const negative = val & 0x80
-  return (val & 0x7f) * (negative ? -1 : 1)
+  return negative ? val - 0x100 : val & 0xFF
 }
 
 export function decByte(val: number): number {

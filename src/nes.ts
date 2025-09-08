@@ -20,6 +20,8 @@ export class NES {
   overflow = false
   negative = false
 
+  cycle = 7
+
   ram = new Uint8Array(2048)
   rom = new Uint8Array()
   header = new Uint8Array()
@@ -102,8 +104,14 @@ export class NES {
     const opcode = this.readPcAndIncrement()
 
     if (opcodes[opcode]) {
-      console.debug({ op: opcode.toString(16), pc: (this.pc - 1).toString(16) })
-      opcodes[opcode](this)
+      console.debug({
+        op: opcode.toString(16),
+        pc: (this.pc - 1).toString(16),
+        x: this.x.toString(16),
+        cycle: this.cycle,
+      })
+      const cycles = opcodes[opcode](this)
+      this.cycle += cycles
     }
     else {
       console.warn('unknown opcode', opcode.toString(16))
