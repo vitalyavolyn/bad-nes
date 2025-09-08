@@ -7,7 +7,7 @@ export function hi(word: number) {
 }
 
 export function lo(word: number) {
-  return word & 0x7f
+  return word & 0xff
 }
 
 export function uint8ToInt8(val: number): number {

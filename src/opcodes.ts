@@ -5,10 +5,12 @@ type OpcodeImpl = (nes: NES) => number
 
 const push = (nes: NES, val: number) => {
   nes.write(0x100 + nes.sp, val)
+  console.debug('push!', val.toString(16))
   nes.sp = decByte(nes.sp)
 }
 const pull = (nes: NES) => {
   nes.sp = incByte(nes.sp)
+  console.debug('pull!', nes.read(0x100 + nes.sp).toString(16))
   return nes.read(0x100 + nes.sp)
 }
 
@@ -56,6 +58,20 @@ const opSbc = (nes: NES, value: number) => {
   nes.overflow = Boolean((result ^ nes.a) & (result ^ (~value)) & 0x80)
   nes.a = result
   nes.setNZFlags(nes.a)
+}
+
+const opCmp = (nes: NES, value: number) => {
+  nes.carry = nes.a >= value
+  nes.zero = value == nes.a
+  nes.negative = (((nes.a - value) & 0xff) & 0x80) !== 0
+}
+
+const opBit = (nes: NES, address: number) => {
+  const memory = nes.read(address)
+  const result = nes.a & memory
+  nes.zero = result === 0
+  nes.overflow = Boolean(memory & (1 << 6))
+  nes.negative = Boolean(memory & (1 << 7))
 }
 
 export const opcodes: Record<number, OpcodeImpl> = {
@@ -574,5 +590,70 @@ export const opcodes: Record<number, OpcodeImpl> = {
     const val = nes.read(addr)
     opSbc(nes, val)
     return 4
+  },
+  0xC9(nes) { // CMP imm
+    const value = nes.readPcAndIncrement()
+    opCmp(nes, value)
+    return 2
+  },
+  0xC5(nes) { // CMP zero
+    const addr = nes.readPcAndIncrement()
+    const val = nes.read(addr)
+    opCmp(nes, val)
+    return 3
+  },
+  0xCD(nes) { // CMP abs
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo, destHi)
+    const val = nes.read(addr)
+    opCmp(nes, val)
+    return 4
+  },
+  0x24(nes) { // BIT zero
+    const addr = nes.readPcAndIncrement()
+    opBit(nes, addr)
+    return 3
+  },
+  0x2C(nes) {
+    const destLo = nes.readPcAndIncrement()
+    const destHi = nes.readPcAndIncrement()
+    const addr = word(destLo, destHi)
+    opBit(nes, addr)
+    return 4
+  },
+
+  0x00(nes) { // BRK
+    push(nes, hi(nes.pc))
+    push(nes, lo(nes.pc))
+    let flags = 0
+    flags += Number(nes.carry)
+    flags += Number(nes.zero) << 1
+    flags += Number(nes.interruptDisable) << 2
+    flags += Number(nes.decimal) << 3
+    flags += 1 << 4
+    flags += 1 << 5
+    flags += Number(nes.overflow) << 6
+    flags += Number(nes.negative) << 7
+    push(nes, flags)
+
+    nes.pc = word(nes.read(0xFFFE), nes.read(0xFFFF))
+
+    return 7
+  },
+
+  0x40(nes) { // RTI
+    const flags = pull(nes)
+    nes.carry = (flags & 1) != 0
+    nes.zero = (flags & (1 << 1)) != 0
+    nes.interruptDisable = (flags & (1 << 2)) != 0
+    nes.decimal = (flags & (1 << 3)) != 0
+    nes.overflow = (flags & (1 << 6)) != 0
+    nes.negative = (flags & (1 << 7)) != 0
+    const pcLo = pull(nes)
+    const pcHi = pull(nes)
+    nes.pc = word(pcLo, pcHi)
+
+    return 6
   },
 }

@@ -65,12 +65,11 @@ export class NES {
     const opcode = this.readPcAndIncrement()
 
     if (opcodes[opcode]) {
-      console.log({ op: opcode.toString(16), pc: this.pc })
+      console.log({ op: opcode.toString(16), pc: (this.pc - 1).toString(16) })
       opcodes[opcode](this)
-      console.debug({ pc: this.pc })
     }
     else {
-      console.warn('unknown opcode', opcode)
+      console.warn('unknown opcode', opcode.toString(16))
     }
   }
 
@@ -85,8 +84,11 @@ export class NES {
   }
 
   public start() {
+    let count = 0
     while (!this.halt) {
       this.tick()
+      count++
+      if (count > 999) break
     }
   }
 }
