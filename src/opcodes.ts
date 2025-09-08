@@ -66,6 +66,18 @@ const opCmp = (nes: NES, value: number) => {
   nes.negative = (((nes.a - value) & 0xff) & 0x80) !== 0
 }
 
+const opCpx = (nes: NES, value: number) => {
+  nes.carry = nes.x >= value
+  nes.zero = value == nes.x
+  nes.negative = (((nes.x - value) & 0xff) & 0x80) !== 0
+}
+
+const opCpy = (nes: NES, value: number) => {
+  nes.carry = nes.y >= value
+  nes.zero = value == nes.y
+  nes.negative = (((nes.y - value) & 0xff) & 0x80) !== 0
+}
+
 const opBit = (nes: NES, address: number) => {
   const memory = nes.read(address)
   const result = nes.a & memory
@@ -76,7 +88,9 @@ const opBit = (nes: NES, address: number) => {
 
 const opAsl = (nes: NES, value: number): number => {
   nes.carry = value > 127
-  return (value << 1) & 0xff
+  const result = (value << 1) & 0xff
+  nes.setNZFlags(result)
+  return result
 }
 
 const opRol = (nes: NES, value: number): number => {
@@ -84,12 +98,15 @@ const opRol = (nes: NES, value: number): number => {
   let result = (value << 1) & 0xff
   if (nes.carry) result |= 1
   nes.carry = laterCarry
+  nes.setNZFlags(result)
   return result
 }
 
 const opLsr = (nes: NES, value: number): number => {
   nes.carry = (value & 1) > 0
-  return value >> 1
+  const result = value >> 1
+  nes.setNZFlags(result)
+  return result
 }
 
 const opRor = (nes: NES, value: number): number => {
@@ -112,34 +129,64 @@ const opSty = (nes: NES, address: number) => {
   nes.write(address, nes.y)
 }
 
+const opStp = (nes: NES) => {
+  nes.halt = true
+  console.debug('halt!', nes.ram)
+  return 1
+}
+
 export const opcodes: Record<number, OpcodeImpl> = {
-  0x02(nes) { // HLT
-    nes.halt = true
-    console.debug('halt!', nes.ram)
-    // TODO: what
-    return 1
-  },
+  0x02: opStp,
+  0x22: opStp,
+  0x42: opStp,
+  0x62: opStp,
+  0x12: opStp,
+  0x32: opStp,
+  0x52: opStp,
+  0x72: opStp,
+  0x92: opStp,
+  0xB2: opStp,
+  0xD2: opStp,
+  0xF2: opStp,
+
   0x85(nes) { // STA zero page
     const address = nes.readPcAndIncrement()
     opSta(nes, address)
     return 3
   },
-  0x8D(nes) { // STA absolute
-    const lo = nes.readPcAndIncrement()
-    const hi = nes.readPcAndIncrement()
-    opSta(nes, word(lo, hi))
+  0x95(nes) { // STA zero,X
+    const address = nes.readZeroPageXIndexed()
+    opSta(nes, address)
     return 4
   },
-
+  0x8D(nes) { // STA absolute
+    const address = nes.readAbsolute()
+    opSta(nes, address)
+    return 4
+  },
+  0x9D(nes) { // STA absolute,X
+    const address = nes.readAbsoluteXIndexed()
+    opSta(nes, address)
+    return 5
+  },
+  0x99(nes) { // STA absolute,Y
+    const address = nes.readAbsoluteYIndexed()
+    opSta(nes, address)
+    return 5
+  },
   0x86(nes) { // STX zero page
     const address = nes.readPcAndIncrement()
     opStx(nes, address)
     return 3
   },
   0x8E(nes) { // STX absolute
-    const lo = nes.readPcAndIncrement()
-    const hi = nes.readPcAndIncrement()
-    opStx(nes, word(lo, hi))
+    const address = nes.readAbsolute()
+    opStx(nes, address)
+    return 4
+  },
+  0x96(nes) { // STX zero,Y
+    const value = nes.read(nes.readZeroPageYIndexed())
+    opStx(nes, value)
     return 4
   },
 
@@ -149,39 +196,93 @@ export const opcodes: Record<number, OpcodeImpl> = {
     return 3
   },
   0x8C(nes) { // STY absolute
-    const lo = nes.readPcAndIncrement()
-    const hi = nes.readPcAndIncrement()
-    opSty(nes, word(lo, hi))
+    const address = nes.readAbsolute()
+    opSty(nes, address)
     return 4
   },
-
+  0x94(nes) { // STY zero, X
+    const address = nes.readZeroPageXIndexed()
+    opSty(nes, address)
+    return 4
+  },
   0xA0(nes) { // LDY immediate
     nes.y = nes.readPcAndIncrement()
     nes.setNZFlags(nes.y)
     return 2
+  },
+  0xA4(nes) { // LDY zero
+    nes.y = nes.read(nes.readZeroPage())
+    nes.setNZFlags(nes.y)
+    return 3
+  },
+  0xB4(nes) { // LDY zero,X
+    nes.y = nes.read(nes.readZeroPageXIndexed())
+    nes.setNZFlags(nes.y)
+    return 2
+  },
+  0xAC(nes) { // LDY abs
+    nes.y = nes.read(nes.readAbsolute())
+    nes.setNZFlags(nes.y)
+    return 4
+  },
+  0xBC(nes) { // LDY abs,X
+    nes.y = nes.read(nes.readAbsoluteXIndexed())
+    nes.setNZFlags(nes.y)
+    return 4
   },
   0xA2(nes) { // LDX immediate
     nes.x = nes.readPcAndIncrement()
     nes.setNZFlags(nes.x)
     return 2
   },
-  0xA5(nes) { // LDA zero page
-    nes.a = nes.readZeroPage()
-    nes.setNZFlags(nes.a)
+  0xA6(nes) { // LDX zero
+    nes.x = nes.read(nes.readZeroPage())
+    nes.setNZFlags(nes.x)
     return 3
+  },
+  0xB6(nes) { // LDX zero,Y
+    nes.x = nes.read(nes.readZeroPageYIndexed())
+    nes.setNZFlags(nes.x)
+    return 2
+  },
+  0xAE(nes) { // LDX abs
+    nes.x = nes.read(nes.readAbsolute())
+    nes.setNZFlags(nes.x)
+    return 4
+  },
+  0xBE(nes) { // LDX abs,Y
+    nes.x = nes.read(nes.readAbsoluteYIndexed())
+    nes.setNZFlags(nes.x)
+    return 4
   },
   0xA9(nes) { // LDA immediate
     nes.a = nes.readPcAndIncrement()
     nes.setNZFlags(nes.a)
     return 2
   },
-  0xAD(nes) { // LDA absolute
-    nes.a = nes.readAbsolute()
+  0xA5(nes) { // LDA zero page
+    nes.a = nes.read(nes.readZeroPage())
+    nes.setNZFlags(nes.a)
+    return 3
+  },
+  0xB5(nes) { // LDA zero page,X
+    nes.a = nes.read(nes.readZeroPageXIndexed())
     nes.setNZFlags(nes.a)
     return 4
   },
-
-  // branches
+  0xAD(nes) { // LDA absolute
+    nes.a = nes.read(nes.readAbsolute())
+    nes.setNZFlags(nes.a)
+    return 4
+  },
+  0xBD(nes) { // LDA abs, X
+    nes.a = nes.read(nes.readAbsoluteXIndexed())
+    return 4
+  },
+  0xB9(nes) { // LDA abs, Y
+    nes.a = nes.read(nes.readAbsoluteYIndexed())
+    return 4
+  },
   0x10(nes) { // BPL Branch on Plus
     const offset = uint8ToInt8(nes.readPcAndIncrement())
     if (!nes.negative) {
@@ -246,7 +347,6 @@ export const opcodes: Record<number, OpcodeImpl> = {
     }
     return 2
   },
-
   0x48(nes) { // PHA
     push(nes, nes.a)
     return 3
@@ -256,7 +356,6 @@ export const opcodes: Record<number, OpcodeImpl> = {
     nes.setNZFlags(nes.a)
     return 4
   },
-
   0x20(nes) { // JSR
     const destLo = nes.readPcAndIncrement()
     const destHi = nes.readPcAndIncrement()
@@ -384,94 +483,131 @@ export const opcodes: Record<number, OpcodeImpl> = {
   },
   0x0A(nes) { // ASL a
     nes.a = opAsl(nes, nes.a)
-    nes.setNZFlags(nes.a)
     return 2
+  },
+  0x06(nes) { // ASL zero page
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    const result = opAsl(nes, value)
+    nes.write(address, result)
+    return 5
+  },
+  0x16(nes) { // ASL zero,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    const result = opAsl(nes, value)
+    nes.write(address, result)
+    return 6
+  },
+  0x0E(nes) { // ASL abs
+    const address = nes.readAbsolute()
+    const value = nes.read(address)
+    const result = opAsl(nes, value)
+    nes.write(address, result)
+    return 6
+  },
+  0x1E(nes) { // ASL abs,X
+    const address = nes.readAbsoluteXIndexed()
+    const value = nes.read(address)
+    const result = opAsl(nes, value)
+    nes.write(address, result)
+    return 7
   },
   0x2A(nes) { // ROL a
     nes.a = opRol(nes, nes.a)
-    nes.setNZFlags(nes.a)
     return 2
   },
-  // TODO: merge these two
-  0x06(nes) { // ASL zero page
-    const addr = nes.readPcAndIncrement()
-    const val = nes.read(addr)
-    const result = opAsl(nes, val)
-    nes.setNZFlags(result)
-    nes.write(addr, result)
-    return 5
-  },
-  0x0E(nes) { // ASL abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
-    const val = nes.read(addr)
-    const result = opAsl(nes, val)
-    nes.setNZFlags(result)
-    nes.write(addr, result)
-    return 6
-  },
-  // TODO: merge these two
   0x26(nes) { // ROL zero page
-    const addr = nes.readPcAndIncrement()
-    const val = nes.read(addr)
-    const result = opRol(nes, val)
-    nes.setNZFlags(result)
-    nes.write(addr, result)
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    const result = opRol(nes, value)
+    nes.write(address, result)
     return 5
+  },
+  0x36(nes) { // ROL zero page,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    const result = opRol(nes, value)
+    nes.write(address, result)
+    return 6
   },
   0x2E(nes) { // ROL abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
-    const val = nes.read(addr)
-    const result = opRol(nes, val)
-    nes.setNZFlags(result)
-    nes.write(addr, result)
+    const address = nes.readAbsolute()
+    const value = nes.read(address)
+    const result = opRol(nes, value)
+    nes.write(address, result)
     return 6
+  },
+  0x3E(nes) { // ROL abs,X
+    const address = nes.readAbsoluteXIndexed()
+    const value = nes.read(address)
+    const result = opRol(nes, value)
+    nes.write(address, result)
+    return 7
   },
   0x4A(nes) { // LSR a
     nes.a = opLsr(nes, nes.a)
-    nes.setNZFlags(nes.a)
     return 2
+  },
+  0x46(nes) { // LSR zero page
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    const result = opLsr(nes, value)
+    nes.write(address, result)
+    return 5
+  },
+  0x56(nes) { // LSR zero page,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    const result = opLsr(nes, value)
+    nes.write(address, result)
+    return 5
+  },
+  0x4E(nes) { // LSR abs
+    const address = nes.readAbsolute()
+    const value = nes.read(address)
+    const result = opLsr(nes, value)
+    nes.write(address, result)
+    return 6
+  },
+  0x5E(nes) { // LSR abs,X
+    const address = nes.readAbsoluteXIndexed()
+    const value = nes.read(address)
+    const result = opLsr(nes, value)
+    nes.write(address, result)
+    return 7
   },
   0x6A(nes) { // ROR a
     nes.a = opRor(nes, nes.a)
     nes.setNZFlags(nes.a)
     return 2
   },
-  // TODO: merge these two
-  0x46(nes) { // LSR zero page
-    const addr = nes.readPcAndIncrement()
-    const val = nes.read(addr)
-    const result = opLsr(nes, val)
+  0x66(nes) { // ROR zero page
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    const result = opRor(nes, value)
     nes.setNZFlags(result)
-    nes.write(addr, result)
+    nes.write(address, result)
     return 5
   },
-  0x4E(nes) { // LSR abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
-    const val = nes.read(addr)
-    const result = opLsr(nes, val)
+  0x76(nes) { // ROR zero page,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    const result = opRor(nes, value)
     nes.setNZFlags(result)
-    nes.write(addr, result)
+    nes.write(address, result)
     return 6
   },
-  // TODO: merge these two
-  0x66(nes) { // ROR zero page
-    const addr = nes.readPcAndIncrement()
+  0x6E(nes) { // ROR abs
+    const addr = nes.readAbsolute()
     const val = nes.read(addr)
     const result = opRor(nes, val)
     nes.setNZFlags(result)
     nes.write(addr, result)
-    return 5
+    return 6
   },
-  0x6E(nes) { // ROR abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
+  0x7E(nes) { // ROR abs,X
+    const addr = nes.readAbsoluteXIndexed()
     const val = nes.read(addr)
     const result = opRor(nes, val)
     nes.setNZFlags(result)
@@ -479,121 +615,261 @@ export const opcodes: Record<number, OpcodeImpl> = {
     return 6
   },
   0xE6(nes) { // INC zero
-    const addr = nes.readPcAndIncrement()
-    const val = nes.read(addr)
-    opInc(nes, addr, val)
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    opInc(nes, address, value)
     return 5
   },
+  0xF6(nes) { // INC zero,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    opInc(nes, address, value)
+    return 6
+  },
   0xEE(nes) { // INC abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
-    const val = nes.read(addr)
-    opInc(nes, addr, val)
+    const address = nes.readAbsolute()
+    const value = nes.read(address)
+    opInc(nes, address, value)
+    return 6
+  },
+  0xFE(nes) { // INC abs,X
+    const address = nes.readAbsoluteXIndexed()
+    const value = nes.read(address)
+    opInc(nes, address, value)
     return 6
   },
   0xC6(nes) { // DEC zero
-    const addr = nes.readPcAndIncrement()
-    const val = nes.read(addr)
-    opDec(nes, addr, val)
+    const address = nes.readZeroPage()
+    const value = nes.read(address)
+    opDec(nes, address, value)
     return 5
   },
-  0xCE(nes) { // DEC abs
-    const destLo = nes.readPcAndIncrement()
-    const destHi = nes.readPcAndIncrement()
-    const addr = word(destLo, destHi)
-    const val = nes.read(addr)
-    opDec(nes, addr, val)
+  0xD6(nes) { // DEC zero,X
+    const address = nes.readZeroPageXIndexed()
+    const value = nes.read(address)
+    opDec(nes, address, value)
     return 6
   },
+  0xCE(nes) { // DEC abs
+    const address = nes.readAbsolute()
+    const value = nes.read(address)
+    opDec(nes, address, value)
+    return 6
+  },
+  0xDE(nes) { // DEC abs,X
+    const address = nes.readAbsoluteXIndexed()
+    const value = nes.read(address)
+    opDec(nes, address, value)
+    return 7
+  },
   0x09(nes) { // ORA imm
-    const value = nes.readPcAndIncrement()
-    opOra(nes, value)
+    const address = nes.readPcAndIncrement()
+    opOra(nes, address)
     return 2
   },
   0x05(nes) { // ORA zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opOra(nes, val)
     return 3
   },
+  0x15(nes) { // ORA zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
+    opOra(nes, val)
+    return 4
+  },
   0x0D(nes) { // ORA abs
-    const val = nes.readAbsolute()
+    const val = nes.read(nes.readAbsolute())
+    opOra(nes, val)
+    return 4
+  },
+  0x1D(nes) { // ORA abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opOra(nes, val)
+    return 4
+  },
+  0x19(nes) { // ORA abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
     opOra(nes, val)
     return 4
   },
   0x29(nes) { // AND imm
-    const value = nes.readPcAndIncrement()
-    opAnd(nes, value)
+    const address = nes.readPcAndIncrement()
+    opAnd(nes, address)
     return 2
   },
   0x25(nes) { // AND zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opAnd(nes, val)
     return 3
   },
+  0x35(nes) { // AND zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
+    opAnd(nes, val)
+    return 4
+  },
   0x2D(nes) { // AND abs
-    const val = nes.readAbsolute()
+    const val = nes.read(nes.readAbsolute())
+    opAnd(nes, val)
+    return 4
+  },
+  0x3D(nes) { // AND abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opAnd(nes, val)
+    return 4
+  },
+  0x39(nes) { // AND abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
     opAnd(nes, val)
     return 4
   },
   0x49(nes) { // EOR imm
-    const value = nes.readPcAndIncrement()
-    opEor(nes, value)
+    const address = nes.readPcAndIncrement()
+    opEor(nes, address)
     return 2
   },
   0x45(nes) { // EOR zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opEor(nes, val)
     return 3
   },
+  0x55(nes) { // EOR zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
+    opEor(nes, val)
+    return 4
+  },
   0x4D(nes) { // EOR abs
-    const val = nes.readAbsolute()
+    const val = nes.read(nes.readAbsolute())
+    opEor(nes, val)
+    return 4
+  },
+  0x5D(nes) { // EOR abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opEor(nes, val)
+    return 4
+  },
+  0x59(nes) { // EOR abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
     opEor(nes, val)
     return 4
   },
   0x69(nes) { // ADC imm
-    const value = nes.readPcAndIncrement()
-    opAdc(nes, value)
+    const address = nes.readPcAndIncrement()
+    opAdc(nes, address)
     return 2
   },
   0x65(nes) { // ADC zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opAdc(nes, val)
     return 3
   },
+  0x75(nes) { // ADC zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
+    opAdc(nes, val)
+    return 4
+  },
   0x6D(nes) { // ADC abs
-    const val = nes.readAbsolute()
+    const val = nes.read(nes.readAbsolute())
+    opAdc(nes, val)
+    return 4
+  },
+  0x7D(nes) { // ADC abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opAdc(nes, val)
+    return 4
+  },
+  0x79(nes) { // ADC abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
     opAdc(nes, val)
     return 4
   },
   0xE9(nes) { // SBC imm
-    const value = nes.readPcAndIncrement()
-    opSbc(nes, value)
+    const address = nes.readPcAndIncrement()
+    opSbc(nes, address)
     return 2
   },
   0xE5(nes) { // SBC zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opSbc(nes, val)
     return 3
   },
+  0xF5(nes) { // SBC zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
+    opSbc(nes, val)
+    return 4
+  },
   0xED(nes) { // SBC abs
-    const val = nes.readAbsolute()
+    const val = nes.read(nes.readAbsolute())
+    opSbc(nes, val)
+    return 4
+  },
+  0xFD(nes) { // SBC abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opSbc(nes, val)
+    return 4
+  },
+  0xF9(nes) { // SBC abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
     opSbc(nes, val)
     return 4
   },
   0xC9(nes) { // CMP imm
-    const value = nes.readPcAndIncrement()
-    opCmp(nes, value)
+    const address = nes.readPcAndIncrement()
+    opCmp(nes, address)
     return 2
   },
   0xC5(nes) { // CMP zero
-    const val = nes.readZeroPage()
+    const val = nes.read(nes.readZeroPage())
     opCmp(nes, val)
     return 3
   },
-  0xCD(nes) { // CMP abs
-    const val = nes.readAbsolute()
+  0xD5(nes) { // CMP zero,X
+    const val = nes.read(nes.readZeroPageXIndexed())
     opCmp(nes, val)
+    return 4
+  },
+  0xCD(nes) { // CMP abs
+    const val = nes.read(nes.readAbsolute())
+    opCmp(nes, val)
+    return 4
+  },
+  0xDD(nes) { // CMP abs,X
+    const val = nes.read(nes.readAbsoluteXIndexed())
+    opCmp(nes, val)
+    return 4
+  },
+  0xD9(nes) { // CMP abs,Y
+    const val = nes.read(nes.readAbsoluteYIndexed())
+    opCmp(nes, val)
+    return 4
+  },
+  0xE0(nes) { // CPX imm
+    const val = nes.readPcAndIncrement()
+    opCpx(nes, val)
+    return 2
+  },
+  0xE4(nes) { // CPX zero
+    const val = nes.read(nes.readZeroPage())
+    opCpx(nes, val)
+    return 3
+  },
+  0xEC(nes) { // CPX abs
+    const val = nes.read(nes.readAbsolute())
+    opCpx(nes, val)
+    return 4
+  },
+  0xC0(nes) { // CPY imm
+    const val = nes.readPcAndIncrement()
+    opCpy(nes, val)
+    return 2
+  },
+  0xC4(nes) { // CPY zero
+    const val = nes.read(nes.readZeroPage())
+    opCpy(nes, val)
+    return 3
+  },
+  0xCC(nes) { // CPY abs
+    const val = nes.read(nes.readAbsolute())
+    opCpy(nes, val)
     return 4
   },
   0x24(nes) { // BIT zero

@@ -4,6 +4,7 @@ import { word } from './utils.js'
 export class NES {
   // word
   // TODO: should overflow
+  // // what?
   pc = 0
   // bytes
   a = 0
@@ -62,15 +63,39 @@ export class NES {
   }
 
   public readZeroPage(): number {
+    return this.readPcAndIncrement()
+  }
+
+  public readZeroPageXIndexed(): number {
     const address = this.readPcAndIncrement()
-    return this.read(address)
+    return (address + this.x) & 0xFF
+  }
+
+  public readZeroPageYIndexed(): number {
+    const address = this.readPcAndIncrement()
+    return (address + this.y) & 0xFF
   }
 
   public readAbsolute(): number {
     const lo = this.readPcAndIncrement()
     const hi = this.readPcAndIncrement()
     const address = word(lo, hi)
-    return this.read(address)
+    return address
+  }
+
+  // TODO: +1 cycle when crossing pages?
+  public readAbsoluteXIndexed(): number {
+    const lo = this.readPcAndIncrement()
+    const hi = this.readPcAndIncrement()
+    const address = word(lo, hi) + this.x
+    return address
+  }
+
+  public readAbsoluteYIndexed(): number {
+    const lo = this.readPcAndIncrement()
+    const hi = this.readPcAndIncrement()
+    const address = word(lo, hi) + this.y
+    return address
   }
 
   private tick() {
@@ -100,7 +125,10 @@ export class NES {
     while (!this.halt) {
       this.tick()
       count++
-      if (count > 999) break
+      if (count > 999) {
+        console.info('Stopped execution after 999 ticks')
+        break
+      }
     }
   }
 }
