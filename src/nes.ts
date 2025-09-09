@@ -3,8 +3,6 @@ import { word } from './utils.js'
 
 export class NES {
   // word
-  // TODO: should overflow
-  // // what?
   pc = 0
   // bytes
   a = 0

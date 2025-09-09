@@ -2,6 +2,14 @@
 
 An NES emulator written in TypeScript. Merely as an exercise.
 
+For now it only emulates the CPU (all instructions are hand-written, in hindsight, that was stupid) and draws the pattern table (yay, some graphics).
+
+NO sound<br>
+NO visuals<br>
+NO inputs
+
+but at least you can see all the sprites from Super Mario Bros. and have it fall into a infinite loop
+
 ## Questions
 
 *Q: Why is it implemented in TypeScript and not in an actual programming language?*<br>
